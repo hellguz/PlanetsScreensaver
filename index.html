@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Point Movement Visualization</title>
+  <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+      color: #fff;
+      font-family: sans-serif;
+    }
+    #root {
+      width: 100%;
+      height: 100%;
+      display: flex;
+    }
+    .panel {
+      width: 300px;
+      padding: 20px;
+      background-color: #000;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+    .panel label {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .panel input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+    .panel button {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 10px;
+      cursor: pointer;
+      font-size: 1em;
+      border-radius: 4px;
+      transition: background-color 0.2s;
+    }
+    .panel button:hover {
+        background: #555;
+    }
+    .panel .checkbox-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .panel .control-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+    }
+    .panel .control-row label {
+      flex-grow: 1;
+      cursor: pointer;
+      flex-direction: row;
+      align-items: center;
+    }
+    input[type="color"] {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        width: 24px;
+        height: 24px;
+        background-color: transparent;
+        border: none;
+        cursor: pointer;
+    }
+    input[type="color"]::-webkit-color-swatch {
+        border-radius: 4px;
+        border: 1px solid #555;
+    }
+    input[type="color"]::-moz-color-swatch {
+        border-radius: 4px;
+        border: 1px solid #555;
+    }
+    input:focus {
+        outline: none;
+    }
+    canvas {
+      display: block;
+      flex-grow: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const generateBrightNeonColor = () => {
+      const h = Math.random() * 360;
+      const s = 0.9 + Math.random() * 0.1;
+      const l = 0.5 + Math.random() * 0.1;
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+      const m = l - c / 2;
+      let r = 0, g = 0, b = 0;
+      if (0 <= h && h < 60) { [r, g, b] = [c, x, 0]; }
+      else if (60 <= h && h < 120) { [r, g, b] = [x, c, 0]; }
+      else if (120 <= h && h < 180) { [r, g, b] = [0, c, x]; }
+      else if (180 <= h && h < 240) { [r, g, b] = [0, x, c]; }
+      else if (240 <= h && h < 300) { [r, g, b] = [x, 0, c]; }
+      else if (300 <= h && h < 360) { [r, g, b] = [c, 0, x]; }
+      r = Math.round((r + m) * 255).toString(16).padStart(2, '0');
+      g = Math.round((g + m) * 255).toString(16).padStart(2, '0');
+      b = Math.round((b + m) * 255).toString(16).padStart(2, '0');
+      return `#${r}${g}${b}`;
+    };
+
+    const App = () => {
+      const [numPoints, setNumPoints] = React.useState(4);
+      const [speedMultiplier, setSpeedMultiplier] = React.useState(1);
+      const [showTraces, setShowTraces] = React.useState(() => Array(8).fill(true));
+      const [showOrbits, setShowOrbits] = React.useState(true);
+      const [showLegs, setShowLegs] = React.useState(true);
+      const [colors, setColors] = React.useState(() => Array(8).fill(null).map(() => generateBrightNeonColor()));
+      
+      const panelRef = React.useRef(null);
+      const canvasRef = React.useRef(null);
+      const pointsRef = React.useRef([]);
+      const tracesRef = React.useRef([]);
+      const transformRef = React.useRef({ x: 0, y: 0, scale: 1 });
+      const animationFrameId = React.useRef(null);
+
+      const reset = React.useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const newPoints = [];
+        const maxRadius = Math.min(canvas.width, canvas.height) / (2.5 * numPoints);
+        for (let i = 0; i < numPoints; i++) {
+          newPoints.push({
+            x: 0,
+            y: 0,
+            radius: i === 0 ? 0 : Math.random() * maxRadius + maxRadius / 2,
+            speed: (Math.random() - 0.5) * 0.05,
+            angle: Math.random() * 2 * Math.PI,
+            color: colors[i]
+          });
+        }
+        pointsRef.current = newPoints;
+        tracesRef.current = Array(numPoints).fill(null).map(() => []);
+        transformRef.current = { x: canvas.width / 2, y: canvas.height / 2, scale: 1 };
+
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }, [numPoints, colors]);
+
+      React.useEffect(() => {
+        const canvas = canvasRef.current;
+        const panel = panelRef.current;
+        if (canvas && panel) {
+            canvas.width = window.innerWidth - panel.offsetWidth;
+            canvas.height = window.innerHeight;
+            reset();
+        }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+
+      React.useEffect(() => {
+        const handleResize = () => {
+            const canvas = canvasRef.current;
+            const panel = panelRef.current;
+            if (canvas && panel) {
+                canvas.width = window.innerWidth - panel.offsetWidth;
+                canvas.height = window.innerHeight;
+                reset();
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+      }, [reset]);
+
+      React.useEffect(() => {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const draw = () => {
+          const points = pointsRef.current;
+          const traces = tracesRef.current;
+          const transform = transformRef.current;
+
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.save();
+          ctx.translate(transform.x, transform.y);
+          ctx.scale(transform.scale, transform.scale);
+
+          let lastX = 0;
+          let lastY = 0;
+
+          points.forEach((point, i) => {
+            if (i > 0) {
+              point.angle += point.speed * speedMultiplier;
+            }
+            const newX = lastX + point.radius * Math.cos(point.angle);
+            const newY = lastY + point.radius * Math.sin(point.angle);
+
+            // --- No more interpolation. Just add one point per frame. ---
+            if (showTraces[i]) {
+              traces[i].push({ x: newX, y: newY });
+              while (traces[i].length > 2000) {
+                traces[i].shift();
+              }
+            }
+            
+            point.x = newX;
+            point.y = newY;
+            
+            if (showLegs && i > 0) {
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(point.x, point.y);
+                ctx.stroke();
+            }
+
+            if (showOrbits && i > 0) {
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+              ctx.setLineDash([4, 4]);
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.arc(lastX, lastY, point.radius, 0, 2 * Math.PI);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+            
+            // --- Draw raw trace with simple lines. No smoothing. ---
+            if (showTraces[i] && traces[i].length > 1) {
+              ctx.strokeStyle = point.color;
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              const pts = traces[i];
+              ctx.moveTo(pts[0].x, pts[0].y);
+              for (let j = 1; j < pts.length; j++) {
+                ctx.lineTo(pts[j].x, pts[j].y);
+              }
+              ctx.stroke();
+            }
+            
+            lastX = point.x;
+            lastY = point.y;
+          });
+          
+          points.forEach((point) => {
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 4 / transform.scale, 0, 2 * Math.PI);
+            ctx.fill();
+          });
+
+          ctx.restore();
+          animationFrameId.current = window.requestAnimationFrame(draw);
+        };
+        
+        draw();
+
+        return () => {
+          if (animationFrameId.current) {
+            window.cancelAnimationFrame(animationFrameId.current);
+          }
+        };
+      }, [speedMultiplier, showTraces, showOrbits, showLegs, colors, reset]);
+
+      const handleWheel = React.useCallback((e) => {
+        e.preventDefault();
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const scaleAmount = 1.1;
+        const transform = transformRef.current;
+        const newScale = e.deltaY > 0 ? transform.scale / scaleAmount : transform.scale * scaleAmount;
+        const worldMouseX = (mouseX - transform.x) / transform.scale;
+        const worldMouseY = (mouseY - transform.y) / transform.scale;
+        const newTx = mouseX - worldMouseX * newScale;
+        const newTy = mouseY - worldMouseY * newScale;
+        transformRef.current = { x: newTx, y: newTy, scale: newScale };
+      }, []);
+
+      const handleMouseDown = React.useCallback((e) => {
+        e.preventDefault();
+        const startX = e.clientX - transformRef.current.x;
+        const startY = e.clientY - transformRef.current.y;
+        const handleMouseMove = (moveEvent) => {
+            transformRef.current.x = moveEvent.clientX - startX;
+            transformRef.current.y = moveEvent.clientY - startY;
+        };
+        const handleMouseUp = () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+      }, []);
+      
+      const handleColorChange = (index, newColor) => {
+          const newColors = [...colors];
+          newColors[index] = newColor;
+          setColors(newColors);
+          if(pointsRef.current[index]) {
+              pointsRef.current[index].color = newColor;
+          }
+      };
+
+      const minSpeed = 0.01;
+      const maxSpeed = 100;
+      const minSlider = Math.log(minSpeed);
+      const maxSlider = Math.log(maxSpeed);
+      const scale = (maxSlider - minSlider) / 100;
+
+      const handleSpeedChange = (e) => {
+          const sliderValue = parseFloat(e.target.value);
+          const newSpeed = Math.exp(minSlider + scale * sliderValue);
+          setSpeedMultiplier(newSpeed);
+      };
+
+      const speedToSliderValue = (speed) => {
+          return (Math.log(speed) - minSlider) / scale;
+      };
+
+      return (
+        <>
+          <div className="panel" ref={panelRef}>
+            <h3>Controls</h3>
+            <label>
+              Number of Points: {numPoints}
+              <input type="range" min="2" max="8" value={numPoints} onChange={(e) => setNumPoints(parseInt(e.target.value))} />
+            </label>
+            <label>
+              Speed (Log): {speedMultiplier.toFixed(2)}
+              <input type="range" min="0" max="100" step="0.1" value={speedToSliderValue(speedMultiplier)} onChange={handleSpeedChange}/>
+            </label>
+            <div className="checkbox-group">
+              <strong>Display Options:</strong>
+               <label><input type="checkbox" checked={showLegs} onChange={() => setShowLegs(!showLegs)} /> Show Connecting Rods</label>
+               <label><input type="checkbox" checked={showOrbits} onChange={() => setShowOrbits(!showOrbits)}/> Show Orbits</label>
+            </div>
+            <div className="checkbox-group">
+              <strong>Point Traces:</strong>
+              {Array.from({ length: numPoints }, (_, i) => (
+                <div className="control-row" key={i}>
+                  <input type="color" value={colors[i]} onChange={(e) => handleColorChange(i, e.target.value)} />
+                  <label>
+                    <input type="checkbox" checked={showTraces[i]} onChange={() => {
+                        const newShowTraces = [...showTraces];
+                        newShowTraces[i] = !newShowTraces[i];
+                        setShowTraces(newShowTraces);
+                      }}
+                    />
+                    Point {String.fromCharCode(65 + i)}
+                  </label>
+                </div>
+              ))}
+            </div>
+            
+            <button onClick={reset}>Reset Simulation</button>
+          </div>
+          <canvas ref={canvasRef} onWheel={handleWheel} onMouseDown={handleMouseDown} />
+        </>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
