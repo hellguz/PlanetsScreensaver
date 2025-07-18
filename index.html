@@ -123,7 +123,7 @@
     };
 
     const App = () => {
-      const [numPoints, setNumPoints] = React.useState(4);
+      const [numPoints, setNumPoints] = React.useState(3);
       const [speedMultiplier, setSpeedMultiplier] = React.useState(1);
       const [showTraces, setShowTraces] = React.useState(() => Array(8).fill(true));
       const [showOrbits, setShowOrbits] = React.useState(true);
@@ -213,12 +213,9 @@
             const newX = lastX + point.radius * Math.cos(point.angle);
             const newY = lastY + point.radius * Math.sin(point.angle);
 
-            // --- No more interpolation. Just add one point per frame. ---
             if (showTraces[i]) {
               traces[i].push({ x: newX, y: newY });
-              while (traces[i].length > 2000) {
-                traces[i].shift();
-              }
+              // The line that removes old trace points has been deleted.
             }
             
             point.x = newX;
@@ -243,7 +240,6 @@
               ctx.setLineDash([]);
             }
             
-            // --- Draw raw trace with simple lines. No smoothing. ---
             if (showTraces[i] && traces[i].length > 1) {
               ctx.strokeStyle = point.color;
               ctx.lineWidth = 1.5;
